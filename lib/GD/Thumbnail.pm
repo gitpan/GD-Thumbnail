@@ -2,7 +2,7 @@ package GD::Thumbnail;
 use strict;
 use vars qw($VERSION %TMP);
 
-$VERSION = '1.0'; # GD version check below breaks ExtUtils::MM
+$VERSION = '1.01'; # GD version check below breaks ExtUtils::MM
 
 use GD;
 use constant GIF_OK       => $GD::VERSION >= 2.15 || $GD::VERSION <= 1.19;

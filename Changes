@@ -2,5 +2,10 @@ Revision history for Perl extension GD::Thumbnail.
 
 Time zone is GMT+2.
 
+1.01 Thu Jun 15 21:31:52 2006
+	=> The famous 'GD path bug' came up again. 
+	   Updated the test file 03-simple.t to use 
+	   scalars instead of file paths.
+
 1.00 Tue Jun 13 14:41:44 2006
 	=> Initial release.
