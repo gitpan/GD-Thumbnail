@@ -1,6 +1,6 @@
 ---
 name: GD-Thumbnail
-version: 1.01
+version: 1.10
 author:
   - 'Burak Gursoy <burak@cpan.org>'
 abstract: Thumbnail maker for GD
@@ -12,8 +12,10 @@ requires:
 provides:
   GD::Thumbnail:
     file: lib/GD/Thumbnail.pm
-    version: 1.01
-generated_by: Module::Build version 0.2801
+    version: 1.10
+  GD::Thumbnail::Compat:
+    file: lib/GD/Thumbnail.pm
+generated_by: Module::Build version 0.2805
 meta-spec:
   url: http://module-build.sourceforge.net/META-spec-v1.2.html
   version: 1.2

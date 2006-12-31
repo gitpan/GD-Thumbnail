@@ -2,6 +2,13 @@ Revision history for Perl extension GD::Thumbnail.
 
 Time zone is GMT+2.
 
+1.10 Sun Dec 31 12:33:08 2006
+	=> We need bytes pragma to determine the size of
+	   a fh. Added a compatibility layer for older perl.
+
+1.02 Wed Jul  5 19:39:25 2006
+	=> Typo in Pod. 
+
 1.01 Thu Jun 15 21:31:52 2006
 	=> The famous 'GD path bug' came up again. 
 	   Updated the test file 03-simple.t to use 

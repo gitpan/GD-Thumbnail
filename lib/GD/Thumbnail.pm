@@ -1,8 +1,19 @@
+package GD::Thumbnail::Compat;
+BEGIN {
+   if($] <  5.006) {
+      if(! exists $INC{'bytes.pm'}) {
+         $INC{'bytes.pm'} = 1;
+         eval 'package 
+         bytes; sub import {} sub unimport {}';
+      }
+   }
+}
+
 package GD::Thumbnail;
 use strict;
 use vars qw($VERSION %TMP);
 
-$VERSION = '1.01'; # GD version check below breaks ExtUtils::MM
+$VERSION = '1.10'; # GD version check below breaks ExtUtils::MM
 
 use GD;
 use constant GIF_OK       => $GD::VERSION >= 2.15 || $GD::VERSION <= 1.19;
@@ -174,7 +185,10 @@ sub _image_size {
    if(defined &GD::Image::_image_type && GD::Image::_image_type($image)) {
       $img_size = length($image);
    } elsif (defined(fileno $image)) {
-      $img_size = do {local $/;my $s=<$image>;return length $s};
+      local $/;
+      binmode $image;
+      use bytes;
+      $img_size = length <$image>;
    } else {
       if(-e $image && !-d _) {
          $img_size = (stat $image)[7];
@@ -469,7 +483,7 @@ you may use a percentage instead of a constant value:
 
    my $raw = $thumb->create('test.jpg', '10%', 2);
 
-Resulting thumbnail will be %90 smaller (x-y dimensions)
+Resulting thumbnail will be 90% smaller (x-y dimensions)
 than the original image.
 
 =head1 CAVEATS
