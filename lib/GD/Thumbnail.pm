@@ -13,9 +13,11 @@ package GD::Thumbnail;
 use strict;
 use vars qw($VERSION %TMP);
 
-$VERSION = '1.10'; # GD version check below breaks ExtUtils::MM
+$VERSION = '1.20'; # GD version check below breaks ExtUtils::MM
 
 use GD;
+use Carp qw( croak );
+
 use constant GIF_OK       => $GD::VERSION >= 2.15 || $GD::VERSION <= 1.19;
 use constant DEFAULT_MIME => 'png';
 use constant BUFFER       => 2; # y-buffer for info strips in pixels
@@ -55,8 +57,8 @@ sub new {
       FORCE_MIME  => '',     # force output type?
       MIME        => '',
    };
-   $self->{FRAME}      = $o{frame}  ? 1 : 0;
-   $self->{SQUARE}     = $o{square} ? 1 : 0;
+   $self->{FRAME}      = $o{frame}  ? 1          : 0;
+   $self->{SQUARE}     = $o{square} ? $o{square} : 0;
    $self->{OVERLAY}    = ($o{overlay}   || $self->{SQUARE}) ? 1 : 0;
    $self->{FORCE_MIME} = $o{force_mime} || '';
    if ($o{font} and my $font = $IS_GD_FONT{ lc( $o{font} ) }) {
@@ -81,71 +83,106 @@ sub create {
    my $info  = shift ||  0;
    my $info2 = $info && $info == 2;
    my $type;
+
    if(length($image) <= 300 && $image =~ m{\.(png|gif|jpg|jpe|jpeg)}i) {
-      $type = $KNOWN{$1};
+      $type = $KNOWN{lc $1};
       if($type eq 'gif' && !GIF_OK) {
          # code will probably die at $gd assignment below
          warn "GIF format is not supported by this version ($GD::VERSION) of GD";
          $type = DEFAULT_MIME;
       }
    }
+
    $type         = DEFAULT_MIME unless $type;
    my $o         = $self->{OVERLAY};
    my $size      = $info2 ? $self->_image_size($image) : 0;
    my $gd        = GD::Image->new($image) or die "GD::Image->new error: $!";
    my($w, $h)    = $gd->getBounds         or die "getBounds() failed: $!";
-   my($ratio);
-   if ($max =~ m{(\d+)(?:\s+|)%}) {
-      $ratio = $1;
-   } else {
-      $ratio = sprintf '%.2f', $max * 100 / $w;
-   }
-   die "Can not determine thumbnail ratio" unless $ratio;
+   my $ratio     = $max =~ m{(\d+)(?:\s+|)%} ? $1
+                 :                             sprintf('%.1f', $max * 100 / $w)
+                 ;
+
+   die "Can not determine thumbnail ratio" if ! $ratio;
+
+   my $square    = $self->{SQUARE} || 0;
+   my $crop      = $square && lc($square) eq 'crop';
+
    my $x         = int $w * $ratio / 100;
    my $def_y     = int $h * $ratio / 100;
-   my $y         = $self->{SQUARE} ? $x : $def_y;
+   my $y         = $square ? $x : $def_y;
    my $yy        = 0; # yy & yy2 has the same value
    my $yy2       = 0;
+
   ($info , $yy ) = $self->_strip($self->_text($w,$h,$type), $x) if $info;
   ($info2, $yy2) = $self->_strip($self->_size($size)      , $x) if $info2;
+
    my $ty        = $yy + $yy2;
    my $new_y     = $o ? $y : $y + $ty;
    my $thumb     = GD::Image->new($x, $new_y);
+   my $iy        = 0;
    my @strips;
-   my $iy = 0;
+
    if ($info) {
       $iy = $o     ? $y - $yy
           : $info2 ? $y + $yy + BUFFER/2
           :          $y       + BUFFER/2
           ;
    }
-   push @strips, [$info , 0, $iy     , 0, 0, $x, $y , 100] if $info;
-   push @strips, [$info2, 0, BUFFER/2, 0, 0, $x, $yy, 100] if $info2;
-   $thumb->colorAllocate(@{ +WHITE }) unless $info;
-   $thumb->copyMerge(@{$_}) for @strips;
+
+   push @strips, [$info , 0, $iy, 0, 0, $x, $y , 100] if $info;
+   push @strips, [$info2, 0,   0, 0, 0, $x, $yy, 100] if $info2;
+
+   $thumb->colorAllocate(@{ +WHITE }) if ! $info;
+
    my $dx     = 0;
    my $dy     = $yy2 || 0;
    my $xsmall = $x < $def_y;
-   if ($self->{SQUARE}) {
+
+   if ( $square ) {
       my $rx = ($w < $h) ? $w/$h :     1;
       my $ry = ($w < $h) ? 1     : $h/$w;
       my $d;
       if($xsmall) { $d = $x * $rx; $dx = ($x - $d) / 2; $x = $d; }
       else        { $d = $y * $ry; $dy = ($y - $d) / 2; $y = $d; }
    }
-   if (not $self->{SQUARE} or $self->{SQUARE} & $xsmall) {
+
+   if (not $square or $square && $xsmall) {
       # does not work if square & y_is_small, 
       # since we may have info bars which eat y space
       $y = $y - $ty - BUFFER/2 if $o;
    }
+
+   if ( $crop ) {
+      my $cr;
+      if ( $xsmall ) {
+         $cr = 2 - sprintf('%.4f', $x / $y);
+         $y  = $y*$cr + $dx/2;
+         $x  = $x*$cr + $dx/2;
+         $dy = -$dx;
+         $dx = 0;
+      }
+      else {
+         $cr = 2 - sprintf('%.4f', $y / $x);
+         $y  = $y*$cr + $dy/2;
+         $x  = $x*$cr + $dy/2;
+         $dx = -$dy;
+         $dy = 0;
+      }
+   }
+
    $thumb->copyResized($gd, $dx, $dy, 0, 0, $x, $y, $w, $h);
+   $thumb->copyMerge(@{$_}) for @strips;
+
    my @dim = $thumb->getBounds;
+
    $self->{DIMENSION}[IMG_X] = $dim[IMG_X];
    $self->{DIMENSION}[IMG_Y] = $dim[IMG_Y];
+
    if ($self->{FRAME}) {
       my $color = $thumb->colorAllocate(@{ $self->{FRAME_COLOR} });
       $thumb->rectangle(0, 0, $dim[IMG_X]-1, $dim[IMG_Y]-1, $color);
    }
+
    my $mime = $self->_force_mime($thumb);
       $type = $mime if $mime;
    $self->{MIME} = $type;
@@ -320,7 +357,8 @@ You'll get a square thumbnail, if this is set to true. If the
 original image is not a square, the empty parts will be filled 
 with blank (color is the same as C<strip_color>) instead of
 streching the image in C<x> or C<y> dimension or clipping
-it.
+it. If, however, C<square> is set to C<crop>, you'll get a
+cropped square thumbnail.
 
 Beware that enabling this option will also B<auto-enable> the 
 C<overlay> option, since it is needed for a square image.
@@ -504,7 +542,7 @@ Burak Gürsoy, E<lt>burakE<64>cpan.orgE<gt>
 
 =head1 COPYRIGHT
 
-Copyright 2006 Burak Gürsoy. All rights reserved.
+Copyright 2006-2008 Burak Gürsoy. All rights reserved.
 
 =head1 LICENSE
 

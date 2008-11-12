@@ -9,7 +9,7 @@ use IO::File;
 sub save;
 
 BEGIN {
-   plan tests => 86;
+   plan tests => 128;
 }
 
 my $COUNTER = 1;
@@ -46,8 +46,12 @@ my %opt = (
 );
 
 run();
-delete $opt{strip_color};
-delete $opt{info_color};
+
+$opt{square}  = "crop";
+$opt{overlay} = 1;
+run();
+
+delete @opt{qw/ strip_color info_color square overlay /};
 run();
 
 sub run { # x42 tests
