@@ -2,6 +2,10 @@ Revision history for Perl extension GD::Thumbnail.
 
 Time zone is GMT+2.
 
+1.30 Mon Nov 17 23:06:07 2008
+    => Fix square thumbnail option.
+    => Add quality options to png() & jpeg().
+
 1.20 Thu Nov 13 00:19:30 2008
     => Added "crop"ping support to square option.
     => Several fixes.

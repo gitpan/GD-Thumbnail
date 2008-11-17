@@ -47,11 +47,10 @@ my %opt = (
 
 run();
 
-$opt{square}  = "crop";
-$opt{overlay} = 1;
+delete @opt{qw/ strip_color info_color /};
 run();
 
-delete @opt{qw/ strip_color info_color square overlay /};
+$opt{square}  = "crop";
 run();
 
 sub run { # x42 tests

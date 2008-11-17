@@ -13,7 +13,7 @@ package GD::Thumbnail;
 use strict;
 use vars qw($VERSION %TMP);
 
-$VERSION = '1.20'; # GD version check below breaks ExtUtils::MM
+$VERSION = '1.30'; # GD version check below breaks ExtUtils::MM
 
 use GD;
 use Carp qw( croak );
@@ -93,6 +93,8 @@ sub create {
       }
    }
 
+   GD::Image->trueColor(1) if GD::Image->can('trueColor');
+
    $type         = DEFAULT_MIME unless $type;
    my $o         = $self->{OVERLAY};
    my $size      = $info2 ? $self->_image_size($image) : 0;
@@ -107,8 +109,8 @@ sub create {
    my $square    = $self->{SQUARE} || 0;
    my $crop      = $square && lc($square) eq 'crop';
 
-   my $x         = int $w * $ratio / 100;
-   my $def_y     = int $h * $ratio / 100;
+   my $x         = sprintf '%.0f', $w * $ratio / 100;
+   my $def_y     = sprintf '%.0f', $h * $ratio / 100;
    my $y         = $square ? $x : $def_y;
    my $yy        = 0; # yy & yy2 has the same value
    my $yy2       = 0;
@@ -122,6 +124,8 @@ sub create {
    my $iy        = 0;
    my @strips;
 
+   $thumb->colorAllocate(@{ +WHITE }) if ! $info;
+
    if ($info) {
       $iy = $o     ? $y - $yy
           : $info2 ? $y + $yy + BUFFER/2
@@ -131,8 +135,6 @@ sub create {
 
    push @strips, [$info , 0, $iy, 0, 0, $x, $y , 100] if $info;
    push @strips, [$info2, 0,   0, 0, 0, $x, $yy, 100] if $info2;
-
-   $thumb->colorAllocate(@{ +WHITE }) if ! $info;
 
    my $dx     = 0;
    my $dy     = $yy2 || 0;
@@ -149,23 +151,23 @@ sub create {
    if (not $square or $square && $xsmall) {
       # does not work if square & y_is_small, 
       # since we may have info bars which eat y space
+      $ty = 0; # TODO. test this more and remove from below
       $y = $y - $ty - BUFFER/2 if $o;
    }
 
    if ( $crop ) {
-      my $cr;
       if ( $xsmall ) {
-         $cr = 2 - sprintf('%.4f', $x / $y);
-         $y  = $y*$cr + $dx/2;
-         $x  = $x*$cr + $dx/2;
-         $dy = -$dx;
+         my $diff = ($y - $x) / $x;
+         $x += $x * $diff;
+         $y += $y * $diff;
+         $dy = -$dx * (2 - $x / $y)**2;
          $dx = 0;
       }
       else {
-         $cr = 2 - sprintf('%.4f', $y / $x);
-         $y  = $y*$cr + $dy/2;
-         $x  = $x*$cr + $dy/2;
-         $dx = -$dy;
+         my $diff = ($x - $y) / $y;
+         $x += $x * $diff;
+         $y += $y * $diff;
+         $dx = -$dy * (2-$y/$x)**2;
          $dy = 0;
       }
    }
@@ -186,7 +188,10 @@ sub create {
    my $mime = $self->_force_mime($thumb);
       $type = $mime if $mime;
    $self->{MIME} = $type;
-   return $thumb->$type();
+   my @iopt;
+   push @iopt, 100 if $type eq 'jpeg';
+   push @iopt,   9 if $type eq 'png';
+   return $thumb->$type(@iopt);
 }
 
 sub width  { shift->{DIMENSION}[IMG_X] }
