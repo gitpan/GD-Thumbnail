@@ -2,6 +2,9 @@ Revision history for Perl extension GD::Thumbnail.
 
 Time zone is GMT+2.
 
+1.31 Sun Mar 29 07:06:54 2009
+    => Module will use copyResampled() if available. Request from Dread Deimos.
+
 1.30 Mon Nov 17 23:06:07 2008
     => Fix square thumbnail option.
     => Add quality options to png() & jpeg().

@@ -13,7 +13,7 @@ package GD::Thumbnail;
 use strict;
 use vars qw($VERSION %TMP);
 
-$VERSION = '1.30'; # GD version check below breaks ExtUtils::MM
+$VERSION = '1.31'; # GD version check below breaks ExtUtils::MM
 
 use GD;
 use Carp qw( croak );
@@ -172,7 +172,9 @@ sub create {
       }
    }
 
-   $thumb->copyResized($gd, $dx, $dy, 0, 0, $x, $y, $w, $h);
+   my $resize = $thumb->can('copyResampled') ? 'copyResampled' : 'copyResized';
+
+   $thumb->$resize($gd, $dx, $dy, 0, 0, $x, $y, $w, $h);
    $thumb->copyMerge(@{$_}) for @strips;
 
    my @dim = $thumb->getBounds;
