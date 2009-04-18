@@ -2,6 +2,9 @@ Revision history for Perl extension GD::Thumbnail.
 
 Time zone is GMT+2.
 
+1.32 Sat Apr 18 06:20:15 2009
+    => Update distro tools.
+
 1.31 Sun Mar 29 07:06:54 2009
     => Module will use copyResampled() if available. Request from Dread Deimos.
 

@@ -1,20 +1,27 @@
 ---
 name: GD-Thumbnail
-version: 1.31
+version: 1.32
 author:
   - 'Burak Gursoy <burak@cpan.org>'
 abstract: Thumbnail maker for GD
 license: perl
 resources:
-  license: ~
+  license: http://dev.perl.org/licenses/
+  repository: http://bitbucket.org/burak/cpan-gd-thumbnail/
 requires:
   GD: 0
+build_requires:
+  Test::More: 0.40
 provides:
   GD::Thumbnail:
     file: lib/GD/Thumbnail.pm
-    version: 1.31
+    version: 1.32
   GD::Thumbnail::Compat:
     file: lib/GD/Thumbnail.pm
+no_index:
+  directory:
+    - tools
+    - t
 generated_by: Module::Build version 0.32
 meta-spec:
   url: http://module-build.sourceforge.net/META-spec-v1.2.html
