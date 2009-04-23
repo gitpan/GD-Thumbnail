@@ -1,15 +1,18 @@
 lib/GD/Thumbnail.pm
-t/1-pod.t
-t/2-pod-coverage.t
-t/3-simple.t
-tools/Build.pm
+t/003-simple.t
 Changes
-Makefile.PL
 Build.PL
 MANIFEST
 MANIFEST.SKIP
 README
-META.yml
 cpan.jpg
 cpan90.jpg
+SPEC
+builder/Build.pm
+builder/Build/Spec.pm
+t/200-all-modules-have-the-same-version.t
+t/201-pod.t
+t/202-pod-coverage.t
+Makefile.PL	Generated automatically
 LICENSE
+META.yml

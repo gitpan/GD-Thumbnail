@@ -1,6 +1,6 @@
 ---
 name: GD-Thumbnail
-version: 1.32
+version: 1.33
 author:
   - 'Burak Gursoy <burak@cpan.org>'
 abstract: Thumbnail maker for GD
@@ -15,12 +15,13 @@ build_requires:
 provides:
   GD::Thumbnail:
     file: lib/GD/Thumbnail.pm
-    version: 1.32
+    version: 1.33
   GD::Thumbnail::Compat:
     file: lib/GD/Thumbnail.pm
 no_index:
   directory:
-    - tools
+    - monolithic_version
+    - builder
     - t
 generated_by: Module::Build version 0.32
 meta-spec:

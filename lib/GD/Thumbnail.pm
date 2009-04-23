@@ -13,7 +13,7 @@ package GD::Thumbnail;
 use strict;
 use vars qw($VERSION %TMP);
 
-$VERSION = '1.32'; # GD version check below breaks ExtUtils::MM
+$VERSION = '1.33'; # GD version check below breaks ExtUtils::MM
 
 use GD;
 use Carp qw( croak );
@@ -307,8 +307,8 @@ or
 
 =head1 DESCRIPTION
 
-This document describes version C<1.32> of C<GD::Thumbnail>
-released on C<18 April 2009>.
+This document describes version C<1.33> of C<GD::Thumbnail>
+released on C<23 April 2009>.
 
 This a thumbnail maker. Thumbnails are smaller versions of the
 original image/graphic/picture and are used for preview purposes,
