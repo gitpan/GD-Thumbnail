@@ -13,7 +13,7 @@ package GD::Thumbnail;
 use strict;
 use vars qw($VERSION %TMP);
 
-$VERSION = '1.33'; # GD version check below breaks ExtUtils::MM
+$VERSION = '1.34'; # GD version check below breaks ExtUtils::MM
 
 use GD;
 use Carp qw( croak );
@@ -41,6 +41,8 @@ my %KNOWN = map {$_, $_} ALL_MIME;
 
 my %IS_GD_FONT = map {lc($_), $_ } qw(Small Large MediumBold Tiny Giant);
 my %SIZE; # see _size()
+
+GD::Image->trueColor(1) if GD::Image->can('trueColor');
 
 sub new {
    my $class = shift;
@@ -92,8 +94,6 @@ sub create {
          $type = DEFAULT_MIME;
       }
    }
-
-   GD::Image->trueColor(1) if GD::Image->can('trueColor');
 
    $type         = DEFAULT_MIME unless $type;
    my $o         = $self->{OVERLAY};
@@ -250,8 +250,9 @@ sub _strip {
    my $sw     = $font->width * length($string);
    my $sh     = $font->height;
    warn "Thumbnail width ($x) is too small for an info text" if $x < $sw;
-   my $info   = GD::Image->new($x, $sh);
-   $info->colorAllocate(@{ $self->{STRIP_COLOR} });
+   my $info   = GD::Image->new($x, $sh+BUFFER);
+   my $color = $info->colorAllocate(@{ $self->{STRIP_COLOR} });
+   $info->filledRectangle(0,0,$x,$sh+BUFFER,$color);
    $info->string($font, ($x - $sw)/2, 0, $string, $info->colorAllocate(@{ $self->{INFO_COLOR} }));
    return $info, $sh + BUFFER;
 }
@@ -307,10 +308,10 @@ or
 
 =head1 DESCRIPTION
 
-This document describes version C<1.33> of C<GD::Thumbnail>
-released on C<23 April 2009>.
+This document describes version C<1.34> of C<GD::Thumbnail>
+released on C<25 July 2009>.
 
-This a thumbnail maker. Thumbnails are smaller versions of the
+This is a thumbnail maker. Thumbnails are smaller versions of the
 original image/graphic/picture and are used for preview purposes,
 where bigger images can take a long time to load. They are also 
 used in image galleries to preview a lot of images at a time.
@@ -324,7 +325,7 @@ software (image galleries or forums).
 This is a I<Yet Another> type of module. There are several 
 other thumbnail modules on CPAN, but they simply don't have 
 the features I need, so this module is written to increase
-the thumbnail population on CPAN.
+the thumbnail generator population on CPAN.
 
 The module can raise an exception if something goes wrong.
 So, you may have to use an C<eval block> to catch them. 
@@ -548,16 +549,16 @@ L<Image::Magick::Thumbnail>, L<Image::Magick::Thumbnail::Fixed>.
 
 =head1 AUTHOR
 
-Burak Gürsoy, E<lt>burakE<64>cpan.orgE<gt>
+Burak Gursoy <burak@cpan.org>.
 
 =head1 COPYRIGHT
 
-Copyright 2006-2009 Burak Gürsoy. All rights reserved.
+Copyright 2006 - 2009 Burak Gursoy. All rights reserved.
 
 =head1 LICENSE
 
 This library is free software; you can redistribute it and/or modify 
-it under the same terms as Perl itself, either Perl version 5.8.8 or, 
+it under the same terms as Perl itself, either Perl version 5.10.0 or, 
 at your option, any later version of Perl 5 you may have available.
 
 =cut

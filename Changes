@@ -2,6 +2,9 @@ Revision history for Perl extension GD::Thumbnail.
 
 Time zone is GMT+2.
 
+1.34 Sat Jul 25 04:05:17 2009
+    => Fixed strip color issue related to true color mode (Patrick Tan).
+
 1.33 Wed Apr 22 19:51:37 2009
     => Update builder.
 

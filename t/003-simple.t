@@ -39,8 +39,8 @@ DUMB_GD_DIES_ON_WINDOWS_PATHS_SO_WE_NEED_SCALARS: {
 }
 
 my %opt = (
-   #strip_color => [255, 255, 255],
-   #info_color  => [  0,   0,   0],
+   strip_color => [255, 255, 255],
+   info_color  => [  0,   0,   0],
    square      => 1,
    frame       => 1,
 );
