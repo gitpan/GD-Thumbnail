@@ -2,9 +2,9 @@ package Build;
 use strict;
 use vars qw( $VERSION );
 use warnings;
-use constant TAINT_SHEBANG => "#!perl -Tw\n";
+use constant TAINT_SHEBANG => "#!perl -Tw\nuse constant TAINTMODE => 1;\n";
 
-$VERSION = '0.61';
+$VERSION = '0.62';
 
 use File::Find;
 use File::Spec;
