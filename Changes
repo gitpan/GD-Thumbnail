@@ -1,6 +1,10 @@
 Revision history for Perl extension GD::Thumbnail.
 
-Time zone is GMT+2.
+1.41 Sun Sep  9 02:48:43 2012
+    => New option dimension_constraint. Requested by "isync".
+
+1.40 Fri Sep 25 19:48:53 2009
+    => Perl::Critic refactoring.
 
 1.35 Fri Sep  4 00:29:03 2009
     => Fix for RT#49353. Thanks to Alexander Vonk.

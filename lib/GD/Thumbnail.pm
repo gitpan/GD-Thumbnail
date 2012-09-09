@@ -1,20 +1,34 @@
 package GD::Thumbnail;
 use strict;
+use warnings;
 use vars qw($VERSION %TMP);
 
-$VERSION = '1.35'; # GD version check below breaks ExtUtils::MM
+$VERSION = '1.41';
 
 use GD;
 use Carp qw( croak );
 
-use constant GIF_OK       => $GD::VERSION >= 2.15 || $GD::VERSION <= 1.19;
-use constant DEFAULT_MIME => 'png';
-use constant BUFFER       => 2; # y-buffer for info strips in pixels
-use constant BLACK        => [  0,   0,   0];
-use constant WHITE        => [255, 255, 255];
-use constant IMG_X        => 0;
-use constant IMG_Y        => 1;
-use constant ALL_MIME     => qw(gif png jpeg gd gd2 wbmp);
+use constant GIF_OK               => $GD::VERSION >= 2.15 || $GD::VERSION <= 1.19;
+use constant DEFAULT_MIME         => 'png';
+use constant BUFFER               => 2; # y-buffer for info strips in pixels
+use constant BLACK                => [   0,   0,   0 ];
+use constant WHITE                => [ 255, 255, 255 ];
+use constant IMG_X                => 0;
+use constant IMG_Y                => 1;
+use constant ALL_MIME             => qw(gif png jpeg gd gd2 wbmp);
+
+use constant KILOBYTE             => 1024;
+use constant MEGABYTE             => 1024 * KILOBYTE;
+use constant GIGABYTE             => 1024 * MEGABYTE;
+
+use constant DEFAULT_MAX_PIXELS   =>   50;
+use constant PATH_LENGTH          =>  255;
+use constant MAX_JPEG_QUALITY     =>  100;
+use constant MAX_PNG_COMPRESSION  =>    9;
+use constant STAT_SIZE            =>    7;
+use constant RATIO_CONSTANT       =>  100;
+use constant RE_FILE_EXTENSION    => qr{ [.] (png|gif|jpg|jpe|jpeg) \z }xmsi;
+use constant RE_RATIO             => qr{ (\d+)(?:\s+|)% }xms;
 
 %TMP = ( # global template. so that one can change the text
    GB   => '%.2f GB',
@@ -24,82 +38,170 @@ use constant ALL_MIME     => qw(gif png jpeg gd gd2 wbmp);
    TEXT => '<WIDTH>x<HEIGHT> <MIME>',
 );
 
-my %KNOWN = map {$_, $_} ALL_MIME;
+my %KNOWN = map { ($_, $_) } ALL_MIME;
    $KNOWN{'jpg'} = 'jpeg';
    $KNOWN{'jpe'} = 'jpeg';
 
-my %IS_GD_FONT = map {lc($_), $_ } qw(Small Large MediumBold Tiny Giant);
-my %SIZE; # see _size()
+my %IS_GD_FONT = map { ( lc($_), $_ ) } qw(Small Large MediumBold Tiny Giant);
 
 GD::Image->trueColor(1) if GD::Image->can('trueColor');
 
 sub new {
-   my $class = shift;
-   my %o     = scalar(@_) % 2 ? () : (@_);
-   my $self  = {
-      DIMENSION   => [0, 0], # Thumbnail dimension
-      GD_FONT     => 'Tiny', # info text color
-      OVERLAY     => 0,      # bool: overlay info strips?
-      STRIP_COLOR => BLACK,
-      INFO_COLOR  => WHITE,
-      SQUARE      => 0,      # bool: make square thumb?
-      FRAME_COLOR => BLACK,
-      FRAME       => 0,      # bool: add frame?
-      FORCE_MIME  => '',     # force output type?
-      MIME        => '',
+   my($class, @args)= @_;
+   my %o    = @args % 2 ? () : @args;
+   my $self = {
+      DIMENSION            => [ 0, 0 ], # Thumbnail dimension
+      DIMENSION_CONSTRAINT => 0,        # don't exceed w/h?
+      FRAME_COLOR          => BLACK,
+      FRAME                => 0,        # bool: add frame?
+      FORCE_MIME           => q{},      # force output type?
+      GD_FONT              => 'Tiny',   # info text color
+      INFO_COLOR           => WHITE,
+      MIME                 => q{},
+      OVERLAY              => 0,        # bool: overlay info strips?
+      STRIP_COLOR          => BLACK,
+      SQUARE               => 0,        # bool: make square thumb?
    };
-   $self->{FRAME}      = $o{frame}  ? 1          : 0;
-   $self->{SQUARE}     = $o{square} ? $o{square} : 0;
-   $self->{OVERLAY}    = ($o{overlay}   || $self->{SQUARE}) ? 1 : 0;
-   $self->{FORCE_MIME} = $o{force_mime} || '';
-   if ($o{font} and my $font = $IS_GD_FONT{ lc( $o{font} ) }) {
+
+   $self->{FRAME}   = $o{frame}  ? 1          : 0;
+   $self->{SQUARE}  = $o{square} ? $o{square} : 0;
+   $self->{OVERLAY} = ($o{overlay} || $self->{SQUARE}) ? 1 : 0;
+
+   for my $name ( qw( FORCE_MIME DIMENSION_CONSTRAINT ) ) {
+      $self->{ $name } = $o{ lc $name } if defined $o{ lc $name };
+   }
+
+   if ( $o{font} and my $font = $IS_GD_FONT{ lc $o{font} } ) {
       $self->{GD_FONT} = $font;
    }
-   my $color;
-   for my $id (qw[STRIP_COLOR INFO_COLOR FRAME_COLOR]) {
+
+   for my $id ( qw( STRIP_COLOR INFO_COLOR FRAME_COLOR ) ) {
       if (my $color = $o{ lc $id }) {
-         if(ref $color && ref $color eq 'ARRAY' && $#{$color} == 2) {
+         if ( ref $color && ref $color eq 'ARRAY' && $#{$color} == 2 ) {
             $self->{$id} = $color;
          }
       }
    }
+
    bless  $self, $class;
    return $self;
 }
 
-sub create {
-   my $self  = shift;
-   my $image = shift || die "image parameter is missing!";
-   my $max   = shift || 50;
-   my $info  = shift ||  0;
-   my $info2 = $info && $info == 2;
+sub _check_type {
+   my($self, $image) = @_;
    my $type;
-
-   if(length($image) <= 300 && $image =~ m{\.(png|gif|jpg|jpe|jpeg)}i) {
+   if ( length $image <= PATH_LENGTH && $image =~ RE_FILE_EXTENSION ) {
       $type = $KNOWN{lc $1};
-      if($type eq 'gif' && !GIF_OK) {
+      if ( $type eq 'gif' && !GIF_OK ) {
          # code will probably die at $gd assignment below
-         warn "GIF format is not supported by this version ($GD::VERSION) of GD";
+         warn "GIF format is not supported by this version ($GD::VERSION) of GD\n";
          $type = DEFAULT_MIME;
       }
    }
 
-   $type         = DEFAULT_MIME unless $type;
+   $type = DEFAULT_MIME if ! $type;
+   return $type;
+}
+
+sub _check_ratio {
+   my($self, $max, $w, $h) = @_;
+   my $ratio;
+   if ( $max =~ RE_RATIO ) {
+      $ratio = $1;
+   }
+   else {
+      my $n = $self->{DIMENSION_CONSTRAINT}
+            ? $w > $h ? $w : $h
+            : $w
+            ;
+      $ratio = sprintf '%.1f', $max * RATIO_CONSTANT / $n;
+   }
+   croak 'Can not determine thumbnail ratio' if ! $ratio;
+   return $ratio;
+}
+
+sub _get_iy {
+   my($self, $info, $info2, $o, $y, $yy) = @_;
+   return 0 if ! $info;
+   return $o       ? $y - $yy
+          : $info2 ? $y + $yy + BUFFER/2
+          :          $y       + BUFFER/2
+          ;
+}
+
+sub _strips {
+   my($self, $info, $info2, $o, $x, $y, $yy) = @_;
+   my $iy = $self->_get_iy( $info, $info2, $o, $y, $yy );
+   my @strips;
+   push @strips, [ $info , 0, $iy, 0, 0, $x, $y , RATIO_CONSTANT ] if $info;
+   push @strips, [ $info2, 0,   0, 0, 0, $x, $yy, RATIO_CONSTANT ] if $info2;
+   return @strips;
+}
+
+sub _alter_for_crop {
+   my($self, $xsmall, $x_ref, $y_ref, $dx_ref, $dy_ref) = @_;
+   if ( $xsmall ) {
+      my $diff   = (${$y_ref} - ${$x_ref}) / ${$x_ref};
+      ${$x_ref} += ${$x_ref} * $diff;
+      ${$y_ref} += ${$y_ref} * $diff;
+      ${$dy_ref} = -${$dx_ref} * (2 - ${$x_ref} / ${$y_ref})**2;
+      ${$dx_ref} = 0;
+   }
+   else {
+      my $diff   = (${$x_ref} - ${$y_ref}) / ${$y_ref};
+      ${$x_ref} += ${$x_ref} * $diff;
+      ${$y_ref} += ${$y_ref} * $diff;
+      ${$dx_ref} = -${$dy_ref} * ( 2 - ${$y_ref}/${$x_ref} )**2;
+      ${$dy_ref} = 0;
+   }
+   return;
+}
+
+sub _setup_parameters {
+   my($self, $opt, $x_ref, $y_ref, $dx_ref, $dy_ref, $ty_ref ) = @_;
+   if ( $opt->{square} ) {
+      my $rx = $opt->{width} < $opt->{height} ? $opt->{width}/$opt->{height} : 1;
+      my $ry = $opt->{width} < $opt->{height} ? 1 : $opt->{height}/$opt->{width};
+      my $d;
+      if ( $opt->{xsmall} ) {
+         $d         =  ${$x_ref} * $rx;
+         ${$dx_ref} = (${$x_ref} - $d) / 2;
+         ${$x_ref}  = $d;
+      }
+      else {
+         $d         = ${$y_ref} * $ry;
+         ${$dy_ref} = (${$y_ref} - $d) / 2;
+         ${$y_ref}  = $d;
+      }
+   }
+
+   if ( ! $opt->{square} || ( $opt->{square} && $opt->{xsmall} ) ) {
+      # does not work if square & y_is_small, 
+      # since we may have info bars which eat y space
+      ${$ty_ref} = 0; # TODO. test this more and remove from below
+      ${$y_ref}  = ${$y_ref} - ${$ty_ref} - BUFFER/2 if $opt->{overlay};
+   }
+   return;
+}
+
+sub create {
+   my $self      = shift;
+   my $image     = shift || croak 'Image parameter is missing';
+   my $max       = shift || DEFAULT_MAX_PIXELS;
+   my $info      = shift || 0;
+
+   my $info2     = $info && $info == 2;
+   my $type      = $self->_check_type( $image );
    my $o         = $self->{OVERLAY};
-   my $size      = $info2 ? $self->_image_size($image) : 0;
-   my $gd        = GD::Image->new($image) or die "GD::Image->new error: $!";
-   my($w, $h)    = $gd->getBounds         or die "getBounds() failed: $!";
-   my $ratio     = $max =~ m{(\d+)(?:\s+|)%} ? $1
-                 :                             sprintf('%.1f', $max * 100 / $w)
-                 ;
-
-   die "Can not determine thumbnail ratio" if ! $ratio;
-
+   my $size      = $info2 ? $self->_image_size( $image ) : 0;
+   my $gd        = GD::Image->new($image) or croak "GD::Image->new error: $!";
+   my($w, $h)    = $gd->getBounds         or croak "getBounds() failed: $!";
+   my $ratio     = $self->_check_ratio($max, $w, $h);
    my $square    = $self->{SQUARE} || 0;
-   my $crop      = $square && lc($square) eq 'crop';
+   my $crop      = $square && lc $square eq 'crop';
 
-   my $x         = sprintf '%.0f', $w * $ratio / 100;
-   my $def_y     = sprintf '%.0f', $h * $ratio / 100;
+   my $x         = sprintf '%.0f', $w * $ratio / RATIO_CONSTANT;
+   my $def_y     = sprintf '%.0f', $h * $ratio / RATIO_CONSTANT;
    my $y         = $square ? $x : $def_y;
    my $yy        = 0; # yy & yy2 has the same value
    my $yy2       = 0;
@@ -109,66 +211,41 @@ sub create {
 
    my $ty        = $yy + $yy2;
    my $new_y     = $o ? $y : $y + $ty;
-   my $thumb     = GD::Image->new($x, $new_y);
+   my $thumb     = GD::Image->new( $x, $new_y );
 
    # RT#49353 | Alexander Vonk: prefill Thumbnail with strip color, as promised
    $thumb->fill( 0, 0, $thumb->colorAllocate( @{ $self->{STRIP_COLOR} } ) );
 
    $thumb->colorAllocate(@{ +WHITE }) if ! $info;
 
-   my $iy = 0;
-   if ($info) {
-      $iy = $o     ? $y - $yy
-          : $info2 ? $y + $yy + BUFFER/2
-          :          $y       + BUFFER/2
-          ;
-   }
-
-   my @strips;
-   push @strips, [$info , 0, $iy, 0, 0, $x, $y , 100] if $info;
-   push @strips, [$info2, 0,   0, 0, 0, $x, $yy, 100] if $info2;
-
+   my @strips = $self->_strips( $info, $info2, $o, $x, $y, $yy );
    my $dx     = 0;
    my $dy     = $yy2 || 0;
    my $xsmall = $x < $def_y;
 
-   if ( $square ) {
-      my $rx = ($w < $h) ? $w/$h :     1;
-      my $ry = ($w < $h) ? 1     : $h/$w;
-      my $d;
-      if($xsmall) { $d = $x * $rx; $dx = ($x - $d) / 2; $x = $d; }
-      else        { $d = $y * $ry; $dy = ($y - $d) / 2; $y = $d; }
-   }
+   $self->_setup_parameters(
+      {
+         xsmall  => $xsmall,
+         square  => $square,
+         width   => $w,
+         height  => $h,
+         overlay => $o,
+      },
+      \$x, \$y, \$dx, \$dy, \$ty
+   );
 
-   if (not $square or $square && $xsmall) {
-      # does not work if square & y_is_small, 
-      # since we may have info bars which eat y space
-      $ty = 0; # TODO. test this more and remove from below
-      $y = $y - $ty - BUFFER/2 if $o;
-   }
-
-   if ( $crop ) {
-      if ( $xsmall ) {
-         my $diff = ($y - $x) / $x;
-         $x += $x * $diff;
-         $y += $y * $diff;
-         $dy = -$dx * (2 - $x / $y)**2;
-         $dx = 0;
-      }
-      else {
-         my $diff = ($x - $y) / $y;
-         $x += $x * $diff;
-         $y += $y * $diff;
-         $dx = -$dy * (2-$y/$x)**2;
-         $dy = 0;
-      }
-   }
+   $self->_alter_for_crop( $xsmall, \$x, \$y, \$dx, \$dy ) if $crop;
 
    my $resize = $thumb->can('copyResampled') ? 'copyResampled' : 'copyResized';
 
    $thumb->$resize($gd, $dx, $dy, 0, 0, $x, $y, $w, $h);
-   $thumb->copyMerge(@{$_}) for @strips;
+   $thumb->copyMerge( @{$_} ) for @strips;
 
+   return $self->_finish( $thumb, $type );
+}
+
+sub _finish {
+   my($self, $thumb, $type) = @_;
    my @dim = $thumb->getBounds;
 
    $self->{DIMENSION}[IMG_X] = $dim[IMG_X];
@@ -176,37 +253,36 @@ sub create {
 
    if ($self->{FRAME}) {
       my $color = $thumb->colorAllocate(@{ $self->{FRAME_COLOR} });
-      $thumb->rectangle(0, 0, $dim[IMG_X]-1, $dim[IMG_Y]-1, $color);
+      $thumb->rectangle( 0, 0, $dim[IMG_X] - 1, $dim[IMG_Y] - 1, $color );
    }
 
    my $mime = $self->_force_mime($thumb);
       $type = $mime if $mime;
    $self->{MIME} = $type;
    my @iopt;
-   push @iopt, 100 if $type eq 'jpeg';
-   push @iopt,   9 if $type eq 'png';
-   return $thumb->$type(@iopt);
+   push @iopt, MAX_JPEG_QUALITY    if $type eq 'jpeg';
+   push @iopt, MAX_PNG_COMPRESSION if $type eq 'png';
+   return $thumb->$type( @iopt );
 }
 
-sub width  { shift->{DIMENSION}[IMG_X] }
-sub height { shift->{DIMENSION}[IMG_Y] }
-sub mime   { shift->{MIME}             }
+sub width  { return shift->{DIMENSION}[IMG_X] }
+sub height { return shift->{DIMENSION}[IMG_Y] }
+sub mime   { return shift->{MIME}             }
 
 sub _force_mime {
    my $self = shift;
    my $gd   = shift || return;
-   return unless $self->{FORCE_MIME};
-   my %mime = map {$_, $_} ALL_MIME;
+   return if ! $self->{FORCE_MIME};
+   my %mime = map { ( $_, $_ ) } ALL_MIME;
    my $type = $mime{ lc $self->{FORCE_MIME} } || return;
    return unless $gd->can($type);
    return $type;
 }
 
 sub _text {
-   my $self = shift;
-   my($w, $h, $type) = @_;
+   my($self, $w, $h, $type) = @_;
    $type = uc $type;
-   my $tmp = $TMP{TEXT} || die "TEXT template is not set";
+   my $tmp = $TMP{TEXT} || croak 'TEXT template is not set';
    $tmp =~ s{<WIDTH>}{$w}xmsg;
    $tmp =~ s{<HEIGHT>}{$h}xmsg;
    $tmp =~ s{<MIME>}{$type}xmsg;
@@ -218,17 +294,20 @@ sub _image_size {
    my $image    = shift;
    my $img_size = 0;
    # don't do that at home. very dangerous :p
-   if(defined &GD::Image::_image_type && GD::Image::_image_type($image)) {
-      $img_size = length($image);
-   } elsif (defined(fileno $image)) {
-      local $/;
+   my $is_image = GD::Image->can('_image_type')
+                  && GD::Image::_image_type($image); ## no critic (ProtectPrivateSubs)
+   if ( $is_image ) { # raw data
+      use bytes;
+      $img_size = length $image;
+   }
+   elsif ( defined fileno $image ) { # filehandle
       binmode $image;
       use bytes;
+      local $/;
       $img_size = length <$image>;
-   } else {
-      if(-e $image && !-d _) {
-         $img_size = (stat $image)[7];
-      }
+   }
+   else { # file
+      $img_size = (stat $image)[STAT_SIZE] if -e $image && !-d _;
    }
    return $img_size;
 }
@@ -239,9 +318,9 @@ sub _strip {
    my $x      = shift;
    my $type   = $self->{GD_FONT};
    my $font   = GD::Font->$type();
-   my $sw     = $font->width * length($string);
+   my $sw     = $font->width * length $string;
    my $sh     = $font->height;
-   warn "Thumbnail width ($x) is too small for an info text" if $x < $sw;
+   warn "Thumbnail width ($x) is too small for an info text\n" if $x < $sw;
    my $info   = GD::Image->new($x, $sh+BUFFER);
    my $color = $info->colorAllocate(@{ $self->{STRIP_COLOR} });
    $info->filledRectangle(0,0,$x,$sh+BUFFER,$color);
@@ -251,25 +330,18 @@ sub _strip {
 
 sub _size {
    my $self = shift;
-   my $size = shift || return "0 byte";
-   unless (%SIZE) {
-      eval q~
-         %SIZE = (
-            GB => 1024 * 1024 * 1024,
-            MB => 1024 * 1024,
-            KB => 1024,
-         );
-      ~;
-   }
-   return sprintf($TMP{GB}, $size / $SIZE{GB}) if($size >= $SIZE{GB});
-   return sprintf($TMP{MB}, $size / $SIZE{MB}) if($size >= $SIZE{MB});
-   return sprintf($TMP{KB}, $size / $SIZE{KB}) if($size >= $SIZE{KB});
-   return sprintf($TMP{BY}, $size);
+   my $size = shift || return '0 bytes';
+   return sprintf $TMP{GB}, $size / GIGABYTE if $size >= GIGABYTE;
+   return sprintf $TMP{MB}, $size / MEGABYTE if $size >= MEGABYTE;
+   return sprintf $TMP{KB}, $size / KILOBYTE if $size >= KILOBYTE;
+   return sprintf $TMP{BY}, $size;
 }
 
 1;
 
 __END__
+
+=pod
 
 =head1 NAME
 
@@ -300,8 +372,8 @@ or
 
 =head1 DESCRIPTION
 
-This document describes version C<1.35> of C<GD::Thumbnail>
-released on C<4 September 2009>.
+This document describes version C<1.41> of C<GD::Thumbnail>
+released on C<9 September 2012>.
 
 This is a thumbnail maker. Thumbnails are smaller versions of the
 original image/graphic/picture and are used for preview purposes,
@@ -314,10 +386,10 @@ and resolution & mime type can be added to the thumbnail's
 upper and lower parts. This feature can be useful for web
 software (image galleries or forums).
 
-This is a I<Yet Another> type of module. There are several 
-other thumbnail modules on CPAN, but they simply don't have 
+This is a I<Yet Another> type of module. There are several
+other thumbnail modules on C<CPAN>, but they simply don't have
 the features I need, so this module is written to increase
-the thumbnail generator population on CPAN.
+the thumbnail generator population on C<CPAN>.
 
 The module can raise an exception if something goes wrong.
 So, you may have to use an C<eval block> to catch them. 
@@ -359,7 +431,7 @@ be smaller than the actual image and image quality may also differ.
 You'll get a square thumbnail, if this is set to true. If the 
 original image is not a square, the empty parts will be filled 
 with blank (color is the same as C<strip_color>) instead of
-streching the image in C<x> or C<y> dimension or clipping
+stretching the image in C<x> or C<y> dimension or clipping
 it. If, however, C<square> is set to C<crop>, you'll get a
 cropped square thumbnail.
 
@@ -378,7 +450,7 @@ Controls the C<frame> color. Default is black.
 =head3 strip_color
 
 Sets the info strip background color. Default is black.
-You must pass it as a three element arayref containing
+You must pass it as a three element array reference containing
 the red, green, blue values:
 
    $thumb = GD::Thumbnail->new(
@@ -388,7 +460,7 @@ the red, green, blue values:
 =head3 info_color
 
 Sets the info strip text color. Default is white.
-You must pass it as a three element arayref containing
+You must pass it as a three element array reference containing
 the red, green, blue values:
 
    $thumb = GD::Thumbnail->new(
@@ -400,6 +472,11 @@ the red, green, blue values:
 You can alter the thumbnail mime with this parameter. 
 Can be set to: C<png>, C<jpeg> or C<gif>.
 
+=head3 dimension_constraint
+
+If set to true, the resulting dimensions will take the original
+image dimensions into consideration. Disabled by default.
+
 =head2 create
 
 Creates the thumbnail and returns the raw image data.
@@ -410,7 +487,7 @@ C<create()> accepts three arguments:
 
 =head3 image
 
-Can be a file path, a filehandle or raw binary data.
+Can be a file path, a file handle or raw binary data.
 
 =head3 max
 
@@ -459,14 +536,14 @@ to the top of the thumbnail:
    | 20x20 JPEG  |
     -------------
 
-As you can see from the schemas above, with the default options,
+As you can see from the examples above, with the default options,
 thumbnail image dimension is constant when adding information strips 
-(ie: strips don't overlay, but attached to upper and lower parts of 
+(i.e.: strips don't overlay, but attached to upper and lower parts of
 thumbnail). Each info strip increases thumbnail height by 8 pixels 
-(if the default tiny gd font C<Tiny> is used).
+(if the default tiny C<GD> font C<Tiny> is used).
 
 But see the C<overlay> and C<square> options in L</new> to alter this
-behaviour. You may also need to increase C<max> value if C<square> is
+behavior. You may also need to increase C<max> value if C<square> is
 enabled.
 
 =head2 mime
@@ -492,9 +569,9 @@ You may get a warning, if there is something odd.
 
 =item *
 
-B<I<"GIF format is not supported by this version (%f) of GD">>
+B<I<"C<GIF> format is not supported by this version (%f) of GD">>
 
-You have an old version of GD and your original image is a GIF
+You have an old version of GD and your original image is a C<GIF>
 image. Also, the code may die after this warning.
 
 =item *
@@ -530,7 +607,7 @@ than the original image.
 =head1 CAVEATS
 
 Supported image types are limited with GD types, which include
-png, jpeg and gif and some others. See L<GD> for more information.
+C<png>, C<jpeg> and C<gif> and some others. See L<GD> for more information.
 Usage of any other image type will be resulted with a fatal
 error.
 
@@ -545,12 +622,11 @@ Burak Gursoy <burak@cpan.org>.
 
 =head1 COPYRIGHT
 
-Copyright 2006 - 2009 Burak Gursoy. All rights reserved.
+Copyright 2006 - 2012 Burak Gursoy. All rights reserved.
 
 =head1 LICENSE
 
-This library is free software; you can redistribute it and/or modify 
-it under the same terms as Perl itself, either Perl version 5.10.0 or, 
+This library is free software; you can redistribute it and/or modify
+it under the same terms as Perl itself, either Perl version 5.14.2 or,
 at your option, any later version of Perl 5 you may have available.
-
 =cut

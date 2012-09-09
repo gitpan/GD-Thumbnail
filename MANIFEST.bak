@@ -14,15 +14,15 @@ Changes
 cpan.jpg
 cpan90.jpg
 lib/GD/Thumbnail.pm
-LICENSE
 Makefile.PL			Generated automatically
 MANIFEST
 MANIFEST.bak
 MANIFEST.SKIP
-META.json
-META.yml
 README
 SPEC
 t/003-simple.t
 xt/author/201-pod.t
 xt/author/202-pod-coverage.t
+LICENSE
+META.yml
+META.json
